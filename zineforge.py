@@ -1,21 +1,48 @@
 import fitz  # PyMuPDF
 import math
-import argparse # Módulo para manejar argumentos de línea de comandos
+import argparse 
 
-# --- Lógica de Imposición (Se mantiene igual) ---
-def obtener_orden_imposicion(num_paginas_reales):
+# --- Lógica de Imposición Actualizada ---
+def obtener_orden_imposicion(num_paginas_reales, fill_position):
     """
-    Calcula el orden de las páginas para la imposición de folleto (zine).
-    Devuelve la lista de índices de página (base 0) y el número de rellenos.
+    Calcula el orden de las páginas para la imposición de folleto (zine), 
+    controlando dónde se insertan las páginas en blanco de relleno.
     """
     n = num_paginas_reales
     N = math.ceil(n / 4) * 4 
     num_relleno = N - n
     
-    indices_secuenciales = list(range(n)) + list(range(n, N))
+    # 1. Crear la lista de índices secuenciales, incluyendo los índices de relleno
+    indices_relleno = list(range(n, N)) # Índices que representan el espacio en blanco
+    
+    # 2. Determinar la secuencia de contenido
+    if num_relleno > 0:
+        if fill_position == 'before_last':
+            # Ejemplo: 6 páginas (0-5), 2 rellenos (6, 7). N=8.
+            # Orden de contenido: [0, 1, 2, 3, 4] + [6, 7] + [5]
+            # La última página real se mueve al final, y el relleno va justo antes.
+            
+            # El contenido real menos la última página
+            contenido_inicio = list(range(n - 1)) 
+            # La última página
+            ultima_pagina = [n - 1] 
+            
+            indices_secuenciales = contenido_inicio + indices_relleno + ultima_pagina
+            
+        elif fill_position == 'end':
+            # Ejemplo: 6 páginas (0-5), 2 rellenos (6, 7). N=8.
+            # Orden de contenido: [0, 1, 2, 3, 4, 5] + [6, 7]
+            indices_secuenciales = list(range(n)) + indices_relleno
+            
+        else:
+            raise ValueError("Valor de fill_position no válido. Use 'end' o 'before_last'.")
+    else:
+        # No hay relleno necesario
+        indices_secuenciales = list(range(n))
 
+
+    # 3. Aplicar la Imposición sobre la secuencia de N índices
     orden = []
-    # Genera el orden de impresión (Última, Primera) y (Segunda, Penúltima)
     for i in range(N // 4):
         # Primer par (externo)
         indice_izq_a = N - 1 - 2 * i 
@@ -33,8 +60,8 @@ def obtener_orden_imposicion(num_paginas_reales):
         
     return orden, num_relleno
 
-# --- Lógica de Conversión (Se mantiene igual) ---
-def crear_zine_imposicion_horizontal(input_pdf_path, output_pdf_path):
+# --- Lógica de Conversión (Sin cambios, solo usa el resultado de la función anterior) ---
+def crear_zine_imposicion_horizontal(input_pdf_path, output_pdf_path, fill_position):
     """
     Convierte un PDF secuencial A5 a un PDF A4 apaisado en formato 'zine' (imposición).
     """
@@ -47,9 +74,11 @@ def crear_zine_imposicion_horizontal(input_pdf_path, output_pdf_path):
             print("El PDF está vacío.")
             return
 
-        orden_paginas_indice_base_0, num_relleno = obtener_orden_imposicion(num_paginas_reales)
+        # 1. Calcular el orden de imposición
+        orden_paginas_indice_base_0, num_relleno = obtener_orden_imposicion(num_paginas_reales, fill_position)
         print(f"📖 PDF de entrada: **{input_pdf_path}**")
-        print(f"Número de páginas originales: {num_paginas_reales}. Relleno necesario: {num_relleno}.")
+        print(f"Posición de relleno: **{fill_position}**")
+        print(f"Páginas originales: {num_paginas_reales}. Relleno necesario: {num_relleno}.")
         
         doc_out = fitz.open()
 
@@ -57,28 +86,27 @@ def crear_zine_imposicion_horizontal(input_pdf_path, output_pdf_path):
         A4_LANDSCAPE_WIDTH = 842
         A4_LANDSCAPE_HEIGHT = 595
         A5_WIDTH_ON_A4 = A4_LANDSCAPE_WIDTH / 2
-        A5_HEIGHT_ON_A4 = A4_LANDSCAPE_HEIGHT
-
-        # 2. Iterar sobre el orden de imposición de dos en dos
+        
+        # 2. Iterar y colocar en el nuevo A4 apaisado
         for i in range(0, len(orden_paginas_indice_base_0), 2):
             idx1 = orden_paginas_indice_base_0[i]
             idx2 = orden_paginas_indice_base_0[i + 1]
             
             new_page = doc_out.new_page(width=A4_LANDSCAPE_WIDTH, height=A4_LANDSCAPE_HEIGHT)
             
-            # 3. Colocar la primera página (Izquierda)
+            # Colocar la página de la izquierda (idx1)
             if idx1 < num_paginas_reales:
-                rect_left = fitz.Rect(0, 0, A5_WIDTH_ON_A4, A5_HEIGHT_ON_A4)
+                rect_left = fitz.Rect(0, 0, A5_WIDTH_ON_A4, A4_LANDSCAPE_HEIGHT)
                 new_page.show_pdf_page(rect_left, doc_in, idx1)
-                print(f"Hoja {doc_out.page_count}: Izquierda (Pág {idx1+1} de contenido)")
+                print(f"Hoja {doc_out.page_count}: Izquierda (Pág {idx1+1})")
             else:
                 print(f"Hoja {doc_out.page_count}: Izquierda (Pág en blanco)")
 
-            # 4. Colocar la segunda página (Derecha)
+            # Colocar la página de la derecha (idx2)
             if idx2 < num_paginas_reales:
-                rect_right = fitz.Rect(A5_WIDTH_ON_A4, 0, A4_LANDSCAPE_WIDTH, A5_HEIGHT_ON_A4)
+                rect_right = fitz.Rect(A5_WIDTH_ON_A4, 0, A4_LANDSCAPE_WIDTH, A4_LANDSCAPE_HEIGHT)
                 new_page.show_pdf_page(rect_right, doc_in, idx2)
-                print(f"Hoja {doc_out.page_count}: Derecha (Pág {idx2+1} de contenido)")
+                print(f"Hoja {doc_out.page_count}: Derecha (Pág {idx2+1})")
             else:
                 print(f"Hoja {doc_out.page_count}: Derecha (Pág en blanco)")
 
@@ -94,7 +122,7 @@ def crear_zine_imposicion_horizontal(input_pdf_path, output_pdf_path):
     except Exception as e:
         print(f"❌ Ocurrió un error inesperado: {e}")
 
-# --- Nuevo Bloque de Argumentos ---
+# --- Bloque de Argumentos Actualizado ---
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Convierte un PDF secuencial (A5) en un PDF A4 apaisado con imposición de zine (folleto).",
@@ -116,6 +144,18 @@ if __name__ == "__main__":
         help="Ruta del archivo PDF de salida (por defecto: zine_listo_para_imprimir.pdf)"
     )
     
+    # NUEVO Argumento para la posición del relleno
+    parser.add_argument(
+        "-f", "--fill-position",
+        type=str,
+        default="end",
+        choices=["end", "before_last"],
+        help="Define dónde se insertan las páginas en blanco:\n"
+             "  end: Al final del documento original (1, 2, ..., última, BLANCO)\n"
+             "  before_last: Justo antes de la última página (1, 2, ..., BLANCO, última)\n"
+             "(Por defecto: end)"
+    )
+    
     args = parser.parse_args()
     
-    crear_zine_imposicion_horizontal(args.input_file, args.output)
+    crear_zine_imposicion_horizontal(args.input_file, args.output, args.fill_position)
