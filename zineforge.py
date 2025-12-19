@@ -2,12 +2,8 @@ import fitz  # PyMuPDF
 import math
 import argparse 
 
-# --- Lógica de Imposición ---
+# --- Lógica de Imposición (Sin cambios) ---
 def obtener_orden_imposicion(num_paginas_reales, fill_position):
-    """
-    Calcula el orden de las páginas para la imposición de folleto (zine), 
-    controlando dónde se insertan las páginas en blanco de relleno.
-    """
     n = num_paginas_reales
     N = math.ceil(n / 4) * 4 
     num_relleno = N - n
@@ -42,11 +38,11 @@ def obtener_orden_imposicion(num_paginas_reales, fill_position):
         
     return orden, num_relleno
 
-# --- Lógica de Conversión Actualizada ---
+# --- Lógica de Conversión Corregida (Usando solo draw_rect) ---
 def crear_zine_imposicion_horizontal(input_pdf_path, output_pdf_path, fill_position):
     """
     Convierte un PDF secuencial A5 a un PDF A4 apaisado en formato 'zine' (imposición),
-    añadiendo páginas en blanco si es necesario y una guía de doblado en la primera hoja.
+    añadiendo una guía de doblado (Rectángulo Negro Relleno) en la primera hoja.
     """
 
     try:
@@ -68,14 +64,16 @@ def crear_zine_imposicion_horizontal(input_pdf_path, output_pdf_path, fill_posit
         A4_LANDSCAPE_HEIGHT = 595
         A5_WIDTH_ON_A4 = A4_LANDSCAPE_WIDTH / 2
         
-        # 2. Iterar y colocar en el nuevo A4 apaisado
+        # Definición del grosor del rectángulo (1.0 punto)
+        RECTANGLE_THICKNESS = 1.0 
+        
         for i in range(0, len(orden_paginas_indice_base_0), 2):
             idx1 = orden_paginas_indice_base_0[i]
             idx2 = orden_paginas_indice_base_0[i + 1]
             
             new_page = doc_out.new_page(width=A4_LANDSCAPE_WIDTH, height=A4_LANDSCAPE_HEIGHT)
             
-            # Colocar la página de la izquierda (idx1)
+            # Colocar las páginas (sin cambios)
             if idx1 < num_paginas_reales:
                 rect_left = fitz.Rect(0, 0, A5_WIDTH_ON_A4, A4_LANDSCAPE_HEIGHT)
                 new_page.show_pdf_page(rect_left, doc_in, idx1)
@@ -83,7 +81,6 @@ def crear_zine_imposicion_horizontal(input_pdf_path, output_pdf_path, fill_posit
             else:
                 print(f"Hoja {doc_out.page_count}: Izquierda (Pág en blanco)")
 
-            # Colocar la página de la derecha (idx2)
             if idx2 < num_paginas_reales:
                 rect_right = fitz.Rect(A5_WIDTH_ON_A4, 0, A4_LANDSCAPE_WIDTH, A4_LANDSCAPE_HEIGHT)
                 new_page.show_pdf_page(rect_right, doc_in, idx2)
@@ -91,24 +88,31 @@ def crear_zine_imposicion_horizontal(input_pdf_path, output_pdf_path, fill_posit
             else:
                 print(f"Hoja {doc_out.page_count}: Derecha (Pág en blanco)")
 
-            # --- AÑADIR LÍNEA GUÍA DE DOBLADO SOLO EN LA PRIMERA PÁGINA DE SALIDA ---
-            if doc_out.page_count == 1: # Esto es la primera página A4 generada
+            # --- AÑADIR GUÍA DE DOBLADO COMO RECTÁNGULO DE RELLENO (CORREGIDO) ---
+            if doc_out.page_count == 1: 
                 center_x = A4_LANDSCAPE_WIDTH / 2
-                start_point = fitz.Point(center_x, 0) # Desde arriba
-                end_point = fitz.Point(center_x, A4_LANDSCAPE_HEIGHT) # Hasta abajo
                 
-                new_page.draw_line(
-                    start_point, 
-                    end_point, 
-                    color=(0, 0, 0), # Negro
-                    width=0.5,       # Fina
-                    dashes=[1, 2]    # Línea discontinua (guía)
+                # Definir el rectángulo muy delgado en el centro
+                rect_guia = fitz.Rect(
+                    center_x - (RECTANGLE_THICKNESS / 2), # Inicio X
+                    0,                                    # Inicio Y (arriba)
+                    center_x + (RECTANGLE_THICKNESS / 2), # Fin X
+                    A4_LANDSCAPE_HEIGHT                   # Fin Y (abajo)
                 )
-                print(f"  --> Añadida línea guía de doblado en la Hoja {doc_out.page_count}.")
+                
+                # Usar draw_rect para rellenar la forma (Máxima compatibilidad para una "línea" rellena)
+                new_page.draw_rect(
+                    rect_guia, 
+                    color=(0, 0, 0),    # Color del borde (Negro)
+                    fill=(0, 0, 0),     # Rellenar de negro
+                    width=0             # Ancho del borde (0 para que solo se vea el relleno sólido)
+                )
+
+                print(f"  --> Añadida línea guía de doblado (RECTÁNGULO RELLENO) en la Hoja {doc_out.page_count}.")
 
 
-        # Guardar el documento de salida
-        doc_out.save(output_pdf_path)
+        # Guardar el documento de salida con compresión
+        doc_out.save(output_pdf_path, deflate=True)
         doc_out.close()
         doc_in.close()
         
